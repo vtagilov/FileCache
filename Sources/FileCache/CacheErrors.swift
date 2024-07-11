@@ -7,13 +7,13 @@
 
 import Foundation
 
-public enum CacheError: Error, LocalizedError {
+public enum CacheError: LocalizedError {
     case invalidPath
     case failedToSave
     case failedToLoad
     case emptyFile
     
-    var localizedDescription: String {
+    public var errorDescription: String {
         switch self {
         case .invalidPath:
             return "Filed to open cache directory."
