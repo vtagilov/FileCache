@@ -15,10 +15,14 @@ public final class FileCache<T: Cashable> {
     
     public private(set) var items: [T] = []
 
-    public init() {}
+    private let errorHandler: (_ error: CacheError) -> Void
+    
+    public init(errorHandler: @escaping (CacheError) -> Void) {
+        self.errorHandler = errorHandler
+    }
     
     private var cacheDirectory: URL? {
-        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
     }
     
     public func addItem(_ item: T) {
@@ -68,28 +72,27 @@ extension FileCache {
         do {
             let data = try JSONSerialization.data(withJSONObject: jsonObjects)
             guard let directoryPath = cacheDirectory else {
-//                LoggerSetup.shared.logError("saveItemsToJSONFile: Caches directory does not exist")
+                errorHandler(.invalidPath)
                 return
             }
-            
             let fileURL = directoryPath.appending(component: "\(fileName).json")
             try data.write(to: fileURL)
         } catch {
-//            LoggerSetup.shared.logError("saveItemsToJSONFile: \(error.localizedDescription)")
+            errorHandler(.failedToSave)
             return
         }
     }
     
     private func loadItemsFromJSONFile(_ fileName: String) {
         guard let directoryPath = cacheDirectory else {
-//            LoggerSetup.shared.logError("loadItemsFromJSONFile: Caches directory does not exist")
+            errorHandler(.invalidPath)
             return
         }
         let fileURL = directoryPath.appending(component: "\(fileName).json")
         do {
             let data = try Data(contentsOf: fileURL)
             guard let json = try JSONSerialization.jsonObject(with: data) as? [Any] else {
-//                LoggerSetup.shared.logError("loadItemsFromJSONFile: File is empty. Path: \(fileURL)")
+                errorHandler(.emptyFile)
                 return
             }
             for jsonObject in json {
@@ -98,7 +101,7 @@ extension FileCache {
                 }
             }
         } catch {
-//            LoggerSetup.shared.logError("loadItemsFromJSONFile: \(error.localizedDescription)")
+            errorHandler(.emptyFile)
             return
         }
     }
@@ -109,7 +112,7 @@ extension FileCache {
         let csvObjects = items.map { $0.csv }.joined(separator: "\n")
         let csvString = T.csvHeader + csvObjects
         guard let directoryPath = cacheDirectory else {
-//            LoggerSetup.shared.logError("saveItemsToCSVFile: Caches directory does not exist")
+            errorHandler(.invalidPath)
             return
         }
         let fileURL = directoryPath.appendingPathComponent("\(fileName).csv")
@@ -117,14 +120,14 @@ extension FileCache {
         do {
             try csvString.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
-//            LoggerSetup.shared.logError("saveItemsToCSVFile: \(error.localizedDescription)")
+            errorHandler(.failedToSave)
             return
         }
     }
     
     private func loadItemsFromCSVFile(_ fileName: String) {
         guard let directoryPath = cacheDirectory else {
-//            LoggerSetup.shared.logError("loadItemsFromCSVFile: Caches directory does not exist")
+            errorHandler(.invalidPath)
             return
         }
         let fileURL = directoryPath.appendingPathComponent("\(fileName).csv")
@@ -137,7 +140,7 @@ extension FileCache {
                 }
             }
         } catch {
-//            LoggerSetup.shared.logError("loadItemsFromCSVFile: \(error.localizedDescription)")
+            errorHandler(.failedToLoad)
             return
         }
     }
