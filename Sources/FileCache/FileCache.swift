@@ -6,142 +6,107 @@
 //
 
 import Foundation
+import SwiftData
 
-public final class FileCache<T: Cashable> {
-    public enum FileType {
-        case json
-        case csv
+public final class FileCache {
+    public typealias FetchResult = (items: [TodoItemPersistenceModel]?, error: CacheError?)
+    
+    private let container: ModelContainer?
+    
+    public init() {
+        container = try? ModelContainer(
+            for: TodoItemPersistenceModel.self,
+            configurations: ModelConfiguration(for: TodoItemPersistenceModel.self)
+        )
     }
     
-    public private(set) var items: [T] = []
-
-    private let errorHandler: (_ error: CacheError) -> Void
-    
-    public init(errorHandler: @escaping (CacheError) -> Void) {
-        self.errorHandler = errorHandler
-    }
-    
-    private var cacheDirectory: URL? {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-    }
-    
-    public func addItem(_ item: T) {
-        if !items.contains(where: { $0.id == item.id }) {
-            items.append(item)
+    public func insert(_ todoItem: TodoItemPersistenceModel) {
+        Task {
+            await self.container?.mainContext.insert(todoItem)
         }
     }
     
-    @discardableResult
-    public func removeItem(_ itemId: String) -> T? {
-        let index = items.firstIndex(where: { $0.id == itemId })
-        if let index = index {
-            return items.remove(at: index)
-        }
-        return nil
-    }
-    
-    public func updateItem(_ newItem: T) {
-        if let index = items.firstIndex(where: { $0.id == newItem.id }) {
-            items[index] = newItem
-        }
-    }
-    
-    public func saveItemsToFile(_ fileName: String, fileType: FileType = .json) {
-        switch fileType {
-        case .json:
-            saveItemsToJSONFile(fileName)
-        case .csv:
-            saveItemsToCSVFile(fileName)
-        }
-    }
-    
-    public func loadItemsFromFile(_ fileName: String, fileType: FileType = .json) {
-        items = []
-        switch fileType {
-        case .json:
-            loadItemsFromJSONFile(fileName)
-        case .csv:
-            loadItemsFromCSVFile(fileName)
-        }
-    }
-}
-
-extension FileCache {
-    private func saveItemsToJSONFile(_ fileName: String) {
-        let jsonObjects: [Any] = items.compactMap({ $0.json })
-        do {
-            let data = try JSONSerialization.data(withJSONObject: jsonObjects)
-            guard let directoryPath = cacheDirectory else {
-                errorHandler(.invalidPath)
-                return
-            }
-            let fileURL = directoryPath.appending(component: "\(fileName).json")
-            try data.write(to: fileURL)
-        } catch {
-            errorHandler(.failedToSave)
-            return
-        }
-    }
-    
-    private func loadItemsFromJSONFile(_ fileName: String) {
-        guard let directoryPath = cacheDirectory else {
-            errorHandler(.invalidPath)
-            return
-        }
-        let fileURL = directoryPath.appending(component: "\(fileName).json")
-        do {
-            let data = try Data(contentsOf: fileURL)
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [Any] else {
-                errorHandler(.emptyFile)
-                return
-            }
-            for jsonObject in json {
-                if let item = T.parse(json: jsonObject) {
-                    addItem(item)
+    public func fetch(completion: @escaping (FetchResult) -> Void) {
+        let descriptor = FetchDescriptor<TodoItemPersistenceModel>()
+        Task {
+            do {
+                let result = try await container?.mainContext.fetch(descriptor)
+                DispatchQueue.main.async {
+                    completion((result, nil))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion((nil, .failedToLoad))
                 }
             }
-        } catch {
-            errorHandler(.emptyFile)
-            return
-        }
-    }
-}
-
-extension FileCache {
-    private func saveItemsToCSVFile(_ fileName: String) {
-        let csvObjects = items.map { $0.csv }.joined(separator: "\n")
-        let csvString = T.csvHeader + csvObjects
-        guard let directoryPath = cacheDirectory else {
-            errorHandler(.invalidPath)
-            return
-        }
-        let fileURL = directoryPath.appendingPathComponent("\(fileName).csv")
-
-        do {
-            try csvString.write(to: fileURL, atomically: true, encoding: .utf8)
-        } catch {
-            errorHandler(.failedToSave)
-            return
         }
     }
     
-    private func loadItemsFromCSVFile(_ fileName: String) {
-        guard let directoryPath = cacheDirectory else {
-            errorHandler(.invalidPath)
-            return
-        }
-        let fileURL = directoryPath.appendingPathComponent("\(fileName).csv")
-        do {
-            let csvString = try String(contentsOf: fileURL, encoding: .utf8)
-            let lines = csvString.split(separator: "\n").map { String($0) }
-            for i in 1 ..< lines.count {
-                if let item = T.parse(csv: lines[i]) {
-                    addItem(item)
+    public func fetchByEditedDate(completion: @escaping (FetchResult) -> Void) {
+        let descriptor = FetchDescriptor<TodoItemPersistenceModel>(
+            sortBy: [
+                .init(\.editedDate)
+            ]
+        )
+        Task {
+            do {
+                let result = try await container?.mainContext.fetch(descriptor)
+                DispatchQueue.main.async {
+                    completion((result, nil))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion((nil, .failedToLoad))
                 }
             }
-        } catch {
-            errorHandler(.failedToLoad)
-            return
+        }
+    }
+    
+    public func fetchCompleted(completion: @escaping (FetchResult) -> Void) {
+        let descriptor = FetchDescriptor<TodoItemPersistenceModel>(
+            predicate: #Predicate { $0.isDone },
+            sortBy: [
+                .init(\.editedDate)
+            ]
+        )
+        Task {
+            do {
+                let result = try await container?.mainContext.fetch(descriptor)
+                DispatchQueue.main.async {
+                    completion((result, nil))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion((nil, .failedToLoad))
+                }
+            }
+        }
+    }
+    
+    public func delete(_ todoItem: TodoItemPersistenceModel) {
+        Task {
+            await self.container?.mainContext.delete(todoItem)
+        }
+    }
+    
+    public func update(_ todoItem: TodoItemPersistenceModel) {
+        Task {
+            await self.container?.mainContext.insert(todoItem)
+        }
+    }
+    
+    public func setItems(_ items: [TodoItemPersistenceModel]) {
+        self.fetch { result in
+            if let error = result.error {
+                return
+            }
+            guard let oldItems = result.items else {
+                return
+            }
+            oldItems.forEach({
+                self.delete($0)
+            })
+            items.forEach({ self.insert($0) })
         }
     }
 }

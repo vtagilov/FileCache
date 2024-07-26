@@ -12,6 +12,7 @@ public enum CacheError: LocalizedError {
     case failedToSave
     case failedToLoad
     case emptyFile
+    case filedToInit
     
     public var errorDescription: String {
         switch self {
@@ -23,6 +24,8 @@ public enum CacheError: LocalizedError {
             return "Failed to load the item from the cache."
         case .emptyFile:
             return "Cache file is empty."
+        case .filedToInit:
+            return "Filed to initialized struct FileCache."
         }
     }
 }
